@@ -54,3 +54,40 @@ downloadURLs:
 ```
 
 So each channel can offer only single version to k0s autopilot client. In general the design pattern here is that each major.minor version will have their own channel where the latest patch release is offered.
+
+## Automation
+
+`.github/workflows/update-channels.yml` updates the channel files for a single
+k0s release. The k0s repository calls it when a release is published. It also
+runs from the Actions tab or from the CLI:
+
+```shell
+gh workflow run update-channels.yml -f version=1.37.2+k0s.1
+```
+
+The workflow runs `scripts/update_channel.sh`. The version is the only required
+input, because the version decides the rest:
+
+- `1.37.2+k0s.1` writes `v1.37/stable`
+- `1.38.0-rc.1+k0s.0` writes `v1.38/unstable`, and only when asked for
+- `--latest` also writes `latest/stable`, or `latest/unstable` for a pre-release
+- `latest` follows `latest/stable`
+
+A final release also moves `vX.Y/unstable` and `latest/unstable` when those
+channels already exist, because both mean "newest release of that line,
+pre-releases included". Without that, a channel would stay on an older release
+candidate for good. A run never creates a channel the release does not belong
+to, and never deletes one.
+
+URLs and checksums come from the release asset list and its `sha256sums.txt`, so
+no k0s binary or airgap bundle is downloaded. Airgap bundle names changed in
+v1.36, so the script picks the name the release publishes. A release that is
+missing any asset, or whose release metadata disagrees with the version string,
+is refused before a single file is written.
+
+The workflow opens a pull request on a `channel/k0s-<version>` branch and leaves
+the merge to a human. It never pushes to `main` and never deletes a channel.
+Re-dispatching the same release updates that branch and its pull request.
+
+The script needs only `sh`, `gh`, `awk`, `sed` and `cmp`, so it runs offline
+against fixtures: `sh scripts/update_channel_test.sh`.
